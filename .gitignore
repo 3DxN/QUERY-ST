@@ -1,0 +1,16 @@
+*.pyc
+server_scripts/LOGS/
+server_scripts/
+tmp/
+
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+
+.env
+.env.*
+
+wandb/
+checkpoints/
+outputs/
