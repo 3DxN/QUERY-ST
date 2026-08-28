@@ -3,7 +3,7 @@ from collections import defaultdict
 import os
 import pickle
 import glob
-from common_functions import *
+from common_functions import evaluate_test_trimodal
 from trimodal_encoder import TriModalEncoder
 
 def load_trimodal_inputs(samples, input_dir):

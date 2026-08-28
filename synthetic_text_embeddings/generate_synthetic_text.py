@@ -10,7 +10,13 @@ from pathlib import Path
 project_root = Path.cwd().parents[0]
 sys.path.append(str(project_root))
 
-from common_functions import *
+from common_functions import (
+    get_cell_type_composition,
+    get_density_description,
+    get_interaction_summary,
+    lineage_or_cell_type_ranking,
+    load_samples,
+)
 
 import json
 
