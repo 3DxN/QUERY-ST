@@ -1,0 +1,84 @@
+QUERY-ST
+
+A research codebase for tri-modal contrastive alignment of spatial transcriptomics data. It maps three views of the same 112 µm tissue patch — H&E image, RNA/cell-type vector, and an LLM-written text description — into one 128-d space, so you can retrieve tissue regions with a natural-language query.
+
+~7k lines of first-party Python, plus a vendored copy of HESCAPE for benchmarking.
+
+The core idea
+
+Everything hinges on the patch key: {tissue}__patch_x{x}_y{y}. Every modality is a dict keyed by that string, and match_and_align_trimodal (common_functions.py:25) intersects the three dicts to produce row-aligned matrices:
+
+┌────────┬────────────────────────────────────────────────────┬───────┐
+│ Matrix │                      Content                       │  Dim  │
+├────────┼────────────────────────────────────────────────────┼───────┤
+│ X      │ UNI2-h image embedding                             │ 1536  │
+├────────┼────────────────────────────────────────────────────┼───────┤
+│ Y      │ RNA: gene means ⊕ log1p cell-type counts ("fused") │ ~1596 │
+├────────┼────────────────────────────────────────────────────┼───────┤
+│ Z      │ OpenAI text-embedding-3-small of the description   │ 1536  │
+└────────┴────────────────────────────────────────────────────┴───────┘
+
+The model (trimodal_encoder.py)
+
+TriModalEncoder is three frozen-input projection heads — nothing pretrained is fine-tuned:
+
+- img_head, rna_head: Linear → LayerNorm → GELU → Dropout → ResidualBlock → Linear(128)
+- text_proj: a shallower 2-layer adapter
+- learnable CLIP temperature (logit_scale)
+
+The loss is the interesting part (trimodal_encoder.py:177):
+
+loss = CLIP(img, rna)                       # primary task
+     + λ_rna_text · CLIP(rna, text)         # "semantic bridge"
+     + λ_img_text · CLIP(img, text)         # "forcing function"
+
+Text is the semantic anchor: image↔RNA is the task you care about, but the text losses drag the space into a region where a sentence query lands somewhere meaningful. Setting both λ to 0 gives the bimodal baseline that every experiment compares against. Early stopping is on the mean MRR of whichever alignment tasks are active.
+
+Note: lines 313–642 of that file are a fully commented-out earlier variant with three separate text heads (composition / interaction / density). Dead code, ~330 lines.
+
+Pipeline, stage by stage
+
+1. Patch construction — patches_creation_img_rna/
+Two dataset-specific scripts (lung_inputs_creation.py for Xenium lung TMAs, prostate_xenium_inputs_creation.py via spatialdata_io). Each bins cells onto a 112 µm grid, crops the matching H&E tile to 224 px (dropping tiles with mean > 235, i.e. background), and writes per-sample pickles: patch_vectors.pkl (cell types), patch_genes_full.pkl (normalized gene means), patch_genes_raw_counts.pkl (raw sums, for HESCAPE). The lung path also has an FFT-based image/coordinate registration step for 14 misaligned samples.
+
+2. Image features — image_uni_embeddings/generate_uni2h_embeddings.py
+UNI2-h via timm + HF hub → uni2h_{tissue}.pkl.
+
+3. Text — synthetic_text_embeddings/generate_synthetic_text.py
+The most opinionated file. Three system prompts, each with a lung and prostate variant, deliberately kept non-overlapping:
+
+- Level 1 — composition: dominant compartment + top cell types. Explicitly forbidden from mentioning density or spatial contact.
+- Level 2 — interaction: radius-neighbor graph → top adjacency pairs. Forbidden from mentioning abundance.
+- Level 3 — density: cellularity percentile bucketed into VERY_SPARSE…SOLID + lineage rank. Forbidden from mentioning contacts.
+
+Levels are then concatenated (level_1_2, level_1_2_3, level_3_1_2) and re-embedded. Generation goes through the OpenAI Batch API (prostate is split per-tissue to stay under limits). The __main__ block hardcodes already-submitted batch IDs with the submission calls commented out — it's a record of a run, not a re-runnable script.
+
+4. Training & evaluation — alignment/final_models.py
+Two protocols, chosen by dataset:
+
+- Lung → LOPO: leave-one-patient-out, since lung has multiple TMA samples per patient.
+- Prostate → spatial K-fold: split_checkerboard_xenium tiles each tissue into a 5×5 or 20×20 grid and assigns whole tiles to folds, so adjacent patches can't leak acroied as keys, not indices, precisely because keys survive reordering.
+
+run_alignment_tests is a hard assertion suite (disjointness, coverage, row-order correspondence) run before every fit. Metrics are R@1/5/10, MRR, median rank, computed bidirectionally for all six directions; compute_bidirectional_metrics counts sims > diagonal instead of argsorting, which is both faster and deterministic under ties.
+
+5. Retrieval / demo — retrieval_functions.py
+search_by_text embeds a live query with OpenAI, pushes it through text_proj, and cosine-ranks against the patch database. plot_spatial_heatmap paints per-query similardinates. Driven interactively from alignment/interactive_querying.ipynb.
+
+Experiments
+
+ablations/ (ablations.py is an argparse CLI over --datasets × --ablations):
+1. RNA representation — cell-type vector vs. gene vector vs. fused
+2. λ sweep — 6 × 4 grid over the two text weights; the paper settles on λ_rna_text=0.4, λ_img_text=0.1
+3. Report granularity — which level combination works best
+
+ablations_functions.py (1480 lines) holds the study drivers plus all the paper figures — heatmaps, KDE panels, interaction-cohort tables.
+
+benchmark/: lung_scalability_benchmark.py measures time and peak RSS/GPU memory across dataset sizes; hescape_comparison/ runs official HESCAPE on identical splits andn_dim=128 QUERY-ST variant in final_models.py for matched capacity.
+
+Things worth knowing before you touch it
+
+- Absolute paths are hardcoded in every __main__ — and they disagree: final_models.py points at /well/rittscher/... (cluster), generate_synthetic_text.py at /Volumes/H. Only ablations.py and the benchmarks take CLI args.
+- sys.path hacking: scripts in subdirs do Path.cwd().parents[0] — final_models.py only imports correctly if you run it from inside alignment/. lung_scalability_benchmark.py uses the more robust __file__-relative form.
+- Wildcard imports remain in 4 files despite the branch being 1-fix-imports — training_functions.py:6, generate_synthetic_text.py:13, and all three in final_models.py:10-12. The previous commit only cleaned up part of them.
+- No tests, no packaging — no setup.py/pyproject.toml, no test suite. Correctness rests on the assertion helpers in common_functions.py.
+- Two __pycache__ directories are tracked in the tree.
