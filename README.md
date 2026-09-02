@@ -41,6 +41,7 @@ The shared space supports cross-modal retrieval, including searching measured ST
 ## Main entry points
 
 - Train the final Lung and Prostate models with `python -u alignment/final_models.py`.
+- Run retrieval against a trained checkpoint with `python -u alignment/demo_inference.py`.
 - Explore interacting with a trained model in `alignment/interactive_querying.ipynb`.
 - See `benchmark/hescape_comparison/README.md` for the HESCAPE benchmark instructions.
 
@@ -185,7 +186,31 @@ python benchmark/hescape_comparison/smoke_test_uni2h_generic.py \
 
 The full HESCAPE LOPO comparison is documented in `benchmark/hescape_comparison/README.md`.
 
-### 8. Interactive querying
+### 8. Inference demo
+
+`alignment/demo_inference.py` runs cross-modal retrieval against a trained checkpoint using only
+the H&E patches and their UNI2-h embeddings; no RNA vectors or text embeddings are required.
+
+```bash
+# Natural-language query -> ranked H&E patches
+export OPENAI_API_KEY="sk-..."
+python -u alignment/demo_inference.py \
+  --checkpoint /path/to/models/lung_final/best.pt \
+  --dataset-dir /path/to/outputs/lung \
+  --text "dense immune infiltrate with lymphocytes adjacent to capillaries" \
+  --top-k 5 --save-fig /tmp/text_query.png
+
+# Retrieve patches similar to an existing one
+python -u alignment/demo_inference.py \
+  --checkpoint /path/to/models/lung_final/best.pt \
+  --dataset-dir /path/to/outputs/lung \
+  --patch TILD049MA__patch_x1344_y2016
+
+# List available patch keys (no checkpoint needed)
+python -u alignment/demo_inference.py --dataset-dir /path/to/outputs/lung --list 20
+```
+
+### 9. Interactive querying
 
 ```bash
 export OPENAI_API_KEY="sk-..."
