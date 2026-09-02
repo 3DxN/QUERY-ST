@@ -18,9 +18,10 @@ from ablations_functions import (
 from common_functions import (
     create_multisample_metadata,
     fuse_gene_cell_type_vectors,
+    load_samples,
     split_checkerboard_xenium,
 )
-from training_functions import load_samples, load_trimodal_inputs
+from training_functions import load_trimodal_inputs
 
 
 DEFAULT_LUNG_DIR = "/well/rittscher/users/mju725/trimodal_alignment_objects/lung"
