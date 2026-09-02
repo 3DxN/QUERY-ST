@@ -19,7 +19,7 @@ This folder reproduces the HESCAPE comparison reported in the QUERY-ST paper. It
 - Maximum 50 epochs with patience 10.
 - Patient-level LOPO using the full trimodal patch universe.
 
-Required Lung inputs are `metadata_lung.csv` and, within every patch folder, `uni_embeddings.pkl` and `patch_genes_raw_counts.pkl`.
+Required Lung inputs are `metadata_lung.csv` and, within every patch folder, `uni2h_<TISSUE>.pkl` and `patch_genes_raw_counts.pkl`.
 
 ## Environment
 

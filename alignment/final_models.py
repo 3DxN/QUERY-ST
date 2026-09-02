@@ -4,8 +4,9 @@ import os
 import sys
 from pathlib import Path
 
-project_root = Path.cwd().parents[0]
-sys.path.append(str(project_root))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from common_functions import (
     create_multisample_metadata,
